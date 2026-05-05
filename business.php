@@ -7,14 +7,12 @@ try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        // --- INSERT (With Duplicate Email Handling) ---
+        // --- INSERT ---
         if (isset($_POST['add_order'])) {
-            // Use 'ON DUPLICATE KEY UPDATE' to prevent the 1062 error
             $stmt = $pdo->prepare("INSERT INTO customers (full_name, email, phone) VALUES (?, ?, ?) 
                                    ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), phone = VALUES(phone)");
             $stmt->execute([$_POST['full_name'], $_POST['email'], $_POST['phone']]);
             
-            // Get the ID of the customer (new or existing)
             $stmt = $pdo->prepare("SELECT customer_id FROM customers WHERE email = ?");
             $stmt->execute([$_POST['email']]);
             $custId = $stmt->fetchColumn();
@@ -27,17 +25,28 @@ try {
             $stmt->execute([$_POST['item_name'], $_POST['price'], $orderId]);
         }
 
-        // --- UPDATE (Status) ---
+        // --- UPDATE STATUS ---
         if (isset($_POST['update_status'])) {
             $stmt = $pdo->prepare("UPDATE orders SET status = ? WHERE order_id = ?");
             $stmt->execute([$_POST['status'], $_POST['order_id']]);
         }
 
-        // --- SOFT DELETE (Cancel) ---
+        // --- CANCEL (SOFT DELETE) ---
         if (isset($_POST['cancel_order'])) {
             $stmt = $pdo->prepare("UPDATE orders SET is_cancelled = 1 WHERE order_id = ?");
             $stmt->execute([$_POST['order_id']]);
         }
+
+        // --- DELETE (PERMANENT REMOVAL) ---
+        if (isset($_POST['delete_order'])) {
+            // We delete from 'items' first because of the foreign key relationship
+            $stmt = $pdo->prepare("DELETE FROM items WHERE order_id = ?");
+            $stmt->execute([$_POST['order_id']]);
+
+            $stmt = $pdo->prepare("DELETE FROM orders WHERE order_id = ?");
+            $stmt->execute([$_POST['order_id']]);
+        }
+
         header("Location: " . $_SERVER['PHP_SELF']); exit;
     }
 
@@ -58,12 +67,15 @@ try {
     <title>Collectibles Shop</title>
     <style>
         body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
-        .box { max-width: 1100px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .box { max-width: 1150px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         input, select, button { padding: 10px; margin: 5px; border: 1px solid #ccc; border-radius: 5px; }
-        button { background: #1a73e8; color: white; border: none; cursor: pointer; }
+        button { background: #1a73e8; color: white; border: none; cursor: pointer; font-weight: bold; }
         .cancel-btn { background: #ff9800; }
+        .delete-btn { background: #d93025; }
+        .delete-btn:hover { background: #b71c1c; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
+        .actions { white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -88,7 +100,7 @@ try {
             <th>Item</th>
             <th>Price</th>
             <th>Status</th>
-            <th>Action</th>
+            <th>Actions</th>
         </tr>
         <?php foreach ($records as $r): ?>
         <tr>
@@ -108,10 +120,17 @@ try {
                     <input type="hidden" name="update_status" value="1">
                 </form>
             </td>
-            <td>
-                <form method="POST">
+            <td class="actions">
+                <!-- Cancel Button -->
+                <form method="POST" style="display:inline;">
                     <input type="hidden" name="order_id" value="<?= $r['order_id'] ?>">
                     <button type="submit" name="cancel_order" class="cancel-btn">Cancel</button>
+                </form>
+
+                <!-- Delete Button -->
+                <form method="POST" style="display:inline;" onsubmit="return confirm('Are you sure you want to PERMANENTLY delete this order?');">
+                    <input type="hidden" name="order_id" value="<?= $r['order_id'] ?>">
+                    <button type="submit" name="delete_order" class="delete-btn">Delete</button>
                 </form>
             </td>
         </tr>
